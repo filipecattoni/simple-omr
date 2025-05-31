@@ -2,8 +2,9 @@ import os, sys, glob, time, itertools
 from enum import Enum
 import numpy as np
 import cv2 as cv
-from skimage.feature import hog
+import joblib
 from sklearn import svm
+from skimage.feature import hog
 
 import helpers
 
@@ -90,18 +91,40 @@ def generate_model():
 	clf = svm.SVC()
 	clf.fit(train_ims, labels)
 
-	return clf, labels
+	return clf
 
 def find_objs(image):
 
-	clf, labels = generate_model()
+	if not os.path.exists("model.svm"):
 
-	clf_data = []
+		print("Generating new model...")
+		clf = generate_model()
+		with open("model.svm", "wb") as f:
+			joblib.dump(clf, f, protocol=5)
+		print("New model generated at ./model.svm")
 
-	symbol = Symbols.notehead_full.value
+	else:
+
+		print("Existing model found, loading...")
+		with open("model.svm", "rb") as f:
+			try:
+				clf = joblib.load(f)
+			except:
+				print("Unable to load model.svm. Try deleting the file to generate a new model.")
+
+	boxes = get_obj_boxes(clf, image, Symbols.notehead_full.value)
+
+	test_check_boxes(image, boxes)
+
+
+def get_obj_boxes(clf, img, symbol):
+
+	init_boxes = []
 	window_size = symbol_sizes[symbol]
 
-	for (x, y, window) in helpers.sliding_window(image, stepSize=8, windowSize=window_size):
+	# getting all bounding boxes in image
+
+	for (x, y, window) in helpers.sliding_window(img, stepSize=8, windowSize=window_size):
 
 		if (window.shape[1] < window_size[0]) or (window.shape[0] < window_size[1]):
 			continue
@@ -115,16 +138,62 @@ def find_objs(image):
 				pixels_per_cell=hog_ppc,
 				cells_per_block=hog_cpb)
 		im_predict = clf.predict([im_hog])
-		clf_data.append([im_predict, x, y])
+		if im_predict == symbol:
+			init_boxes.append([x, y])
 
-	clone = image.copy()
+	# combining overlapping boxes
+
+	total_area = window_size[0] * window_size[1]
+	combined_boxes = []
+	for x, y in init_boxes:
+
+		if not combined_boxes:
+			combined_boxes.append([x, y, x+window_size[0], y+window_size[1]])
+			continue
+
+		# calculate overlap with existing boxes
+		x2 = x + window_size[0]
+		y2 = y + window_size[1]
+
+		overlap = -1
+		for i in range(len(combined_boxes)):
+
+			xi1, yi1, xi2, yi2 = combined_boxes[i]
+
+			xx1 = max(x, xi1)
+			xx2 = min(x2, xi2)
+			yy1 = max(y, yi1)
+			yy2 = min(y2, yi2)
+
+			if (xx2-xx1 < 0) or (yy2-yy1 < 0):
+				continue
+
+			overlap_area = (xx2-xx1) * (yy2-yy1)
+			if overlap_area >= 0.5 * total_area:
+				overlap = i
+				break
+
+		if overlap == -1:
+			combined_boxes.append([x, y, x+window_size[0], y+window_size[1]])
+		else:
+			combined_boxes[i] = [
+				min(x, combined_boxes[i][0]),
+				min(y, combined_boxes[i][1]),
+				max(x+window_size[0], combined_boxes[i][2]),
+				max(y+window_size[1], combined_boxes[i][3])
+			]
+
+	return combined_boxes
+
+def test_check_boxes(img, boxes):
+
+	clone = img.copy()
 	clone = cv.cvtColor(clone, cv.COLOR_GRAY2BGR)
-	for pred, x, y in clf_data:
-		if pred == symbol:
-			cv.rectangle(clone, 
-				(x, y), 
-				(x+window_size[0], y+window_size[1]), 
-				(0, 0, 255), 
-				2)
+	for x1, y1, x2, y2 in boxes:
+		cv.rectangle(clone, 
+			(x1, y1), 
+			(x2, y2), 
+			(0, 0, 255), 
+			2)
 	cv.imshow("Window", clone)
 	cv.waitKey(0)
