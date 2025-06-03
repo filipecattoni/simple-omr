@@ -1,4 +1,5 @@
 import os, sys, glob, time, itertools, joblib
+from enum import Enum
 
 import numpy as np
 import cv2 as cv
@@ -6,8 +7,86 @@ import cv2 as cv
 from sklearn import svm
 from skimage.feature import hog
 
-from config import *
 import helpers
+
+class Symbols(Enum):
+	empty                = 0
+	unknown              = 1
+	notehead_full        = 2
+	notehead_empty       = 3
+	rest_whole           = 4
+	rest_half            = 5
+	rest_quarter         = 6
+	rest_eighth          = 7
+	rest_sixteenth       = 8
+	rest_thirtysecond    = 9
+	accidental_flat      = 10
+	accidental_natural   = 11
+	accidental_sharp     = 12
+	clef_alto            = 13
+	clef_bass            = 14
+	clef_treble          = 15
+
+paths = [
+	'empty',
+	'unknown',
+	'noteheads/full',
+	'noteheads/empty',
+	'rests/whole',
+	'rests/half',
+	'rests/quarter',
+	'rests/eighth',
+	'rests/sixteenth',
+	'rests/thirtysecond',
+	'accidentals/flat',
+	'accidentals/natural',
+	'accidentals/sharp',
+	'clefs/alto',
+	'clefs/bass',
+	'clefs/treble'
+]
+
+symbol_names = [
+	'',
+	'',
+	'',
+	'',
+	'',
+	'',
+	'quarter rests',
+	'eighth rests',
+	'sixteenth rests',
+	'thirty-second rests',
+	'flats',
+	'naturals',
+	'sharps',
+	'alto clefs',
+	'bass clefs',
+	'treble clefs'
+]
+
+symbol_sizes = [
+	[0, 0],
+	[0, 0],
+	[40, 35],
+	[40, 35],
+	[0, 0],
+	[0, 0],
+	[40, 70],
+	[30, 50],
+	[30, 70],
+	[30, 90],
+	[30, 70],
+	[25, 50],
+	[30, 70],
+	[70, 160],
+	[70, 160],
+	[70, 160]
+]
+
+hog_or = 9
+hog_ppc = [4, 4]
+hog_cpb = [2, 2]
 
 def generate_model():
 
@@ -37,7 +116,7 @@ def generate_model():
 
 	return clf
 
-def find_objs(image):
+def find_objs(image, image_sl, upper, lower):
 
 	if not os.path.exists("model.svm"):
 
@@ -56,27 +135,31 @@ def find_objs(image):
 			except:
 				print("Unable to load model.svm. Try deleting the file to generate a new model.")
 
-	cropped_img, crop_x, crop_y = helpers.crop_whitespace(image)
-	symbols = []
+	print("Detecting whole/half rests...")
+	symbols = get_wholehalf(clf, image_sl, upper, lower)
 
-	#get_obj_boxes(clf, cropped_img, Symbols.rest_wholehalf.value)
-
-	print("Detecting whole/half notes...")
-	for box in get_obj_boxes(clf, cropped_img, Symbols.notehead_empty.value):
-		flags = find_flags(cropped_img, box)
-		symbols.append([Symbols.notehead_empty.value, crop_x+int((box[0]+box[2])/2), crop_y+int((box[1]+box[3])/2), flags])
-
-	print("Detecting other notes...")
-	for box in get_obj_boxes(clf, cropped_img, Symbols.notehead_full.value):
-		flags = find_flags(cropped_img, box)
-		symbols.append([Symbols.notehead_full.value, crop_x+int((box[0]+box[2])/2), crop_y+int((box[1]+box[3])/2), flags])
-
-	for i in range(Symbols.rest_wholehalf.value, len(Symbols)):
-		print(f"Detecting {symbol_names[i]}...")
-		for box in get_obj_boxes(clf, cropped_img, i):
-			symbols.append([i, crop_x+int((box[0]+box[2])/2), crop_y+int((box[1]+box[3])/2)])
+	for s in symbols:
+		print(s)
 
 	return symbols
+
+	print("Detecting whole/half notes...")
+	for box in get_obj_boxes(clf, image, Symbols.notehead_empty.value):
+		flags = find_flags(image, box)
+		symbols.append([Symbols.notehead_empty.value, int((box[0]+box[2])/2), int((box[1]+box[3])/2), flags])
+
+	print("Detecting other notes...")
+	for box in get_obj_boxes(clf, image, Symbols.notehead_full.value):
+		flags = find_flags(image, box)
+		symbols.append([Symbols.notehead_full.value, int((box[0]+box[2])/2), int((box[1]+box[3])/2), flags])
+
+	for i in range(Symbols.rest_quarter.value, len(Symbols)):
+		print(f"Detecting {symbol_names[i]}...")
+		for box in get_obj_boxes(clf, image, i):
+			symbols.append([i, int((box[0]+box[2])/2), int((box[1]+box[3])/2)])
+
+	for s in symbols:
+		print(s)
 
 def combine_overlaps(boxes, window_size):
 
@@ -121,6 +204,43 @@ def combine_overlaps(boxes, window_size):
 			]
 
 	return combined_boxes
+
+def get_wholehalf(clf, img, upper, lower):
+
+	init_boxes_whole = []
+	init_boxes_half = []
+
+	window_size = [32, lower-upper]
+
+	for x in range(0, img.shape[1]-32, 8): 
+
+		window = img[upper:lower, x:x+32]
+		
+		#cv.imwrite("data_temp/a1_{}_{}.png".format(x, 0), window)
+		#continue
+
+		resized = cv.resize(window, (32, 32))
+		im_hog = hog(resized,
+				orientations=hog_or,
+				pixels_per_cell=hog_ppc,
+				cells_per_block=hog_cpb)
+		im_predict = clf.predict([im_hog])
+		if im_predict == Symbols.rest_whole.value:
+			init_boxes_whole.append([x, 0])
+		if im_predict == Symbols.rest_half.value:
+			init_boxes_half.append([x, 0])
+
+	#sys.exit(0)
+
+	symbols = []
+
+	for box in combine_overlaps(init_boxes_whole, window_size):
+		symbols.append([Symbols.rest_whole.value, int((box[0]+box[2])/2), int((box[1]+box[3])/2)])
+
+	for box in combine_overlaps(init_boxes_half, window_size):
+		symbols.append([Symbols.rest_half.value, int((box[0]+box[2])/2), int((box[1]+box[3])/2)])
+	
+	return symbols
 
 def get_obj_boxes(clf, img, symbol):
 

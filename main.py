@@ -1,7 +1,10 @@
 import os, sys
+from statistics import fmean
 import numpy as np
 import cv2 as cv
+from skimage.transform import rescale
 
+from config import *
 import helpers
 import segmentation
 import obj_detection
@@ -21,16 +24,22 @@ if not os.path.exists(imgpath):
 	print("Invalid image path.")
 	sys.exit(0)
 
+visualize = False
+for i in range(2, len(sys.argv)):
+	if sys.argv[i] == "-v":
+		visualize = True
+
 img = cv.imread(imgpath, cv.IMREAD_GRAYSCALE)
 
 # binarização
 
+print("Binarizing image...")
 th, img_bin = cv.threshold(img, 0, 255, cv.THRESH_BINARY+cv.THRESH_OTSU)
 
 # detecção de pautas
 
-img_bin = np.float32(img_bin)
-hist = cv.reduce(img_bin, 1, cv.REDUCE_SUM)
+print("Detecting stafflines...")
+hist = cv.reduce(np.float32(img_bin), 1, cv.REDUCE_SUM)
 
 staff_range = min(hist)*1.1 # numero magico... arrumar depois
 staff_rows = []
@@ -54,7 +63,11 @@ for n in staff_rows:
 
 grouped_staff_rows.append(l)
 
-bounds = segmentation.segment_staves(img, grouped_staff_rows)
+if len(grouped_staff_rows) < 5:
+	print("Unable to detect enough stafflines in image.")
+	sys.exit(0)
+
+bounds = segmentation.segment_staves(img_bin, grouped_staff_rows)
 
 adjusted_staff_rows = []
 for i in range(len(bounds)):
@@ -63,15 +76,59 @@ for i in range(len(bounds)):
 		r.append([h-bounds[i][0] for h in grouped_staff_rows[i*5+j]])
 	adjusted_staff_rows.append(r)
 
+# calculando staffline_height e staffspace_height
+
+sl_avg_heights = []
+sl_thickness = []
+for i in range(5):
+	sl_thickness.append(len(adjusted_staff_rows[0][i]))
+	sl_avg_heights.append(fmean(adjusted_staff_rows[0][i]))
+
+staffline_height = fmean(sl_thickness)
+staffspace_height = fmean(list(sl_avg_heights[i+1]-sl_avg_heights[i] for i in range(4)))
+
+print(f"{len(adjusted_staff_rows)} staff/staves detected. Staffline height: {staffline_height}, Staffspace height: {staffspace_height}")
+
+# setting scale value
+
+scale = 20.625 / staffspace_height
+
 # remoção de pautas:
 
+img_nosl = img_bin.copy()
+
 for i in staff_rows:
-	for j in range(0, len(img[0])):
-		if img[i-1][j] == 255:
-			img[i][j] = 255
+	for j in range(0, len(img_nosl[0])):
+		if img_nosl[i-1][j] == 255:
+			img_nosl[i][j] = 255
 
 separated_staves = []
 for b in bounds:
-	separated_staves.append(img[b[0]:b[1]][:])
+	separated_staves.append(img_nosl[b[0]:b[1]][:])
 
-obj_detection.find_objs(separated_staves[0])
+# recebendo listas de simbolos
+
+print("Running symbol detection...")
+
+scaled_staff = cv.resize(separated_staves[0], (0, 0), fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
+symbols = obj_detection.find_objs(scaled_staff)
+
+for s in symbols:
+	print(s)
+
+if visualize:
+
+	print("Creating visualization...")
+	clone = scaled_staff.copy()
+	clone = cv.cvtColor(clone, cv.COLOR_GRAY2BGR)
+
+	for s in symbols:
+		cv.rectangle(clone,
+			(int(s[1]-(symbol_sizes[s[0]][0]/2)), int(s[2]-(symbol_sizes[s[0]][1]/2))), 
+			(int(s[1]+(symbol_sizes[s[0]][0]/2)), int(s[2]+(symbol_sizes[s[0]][1]/2))), 
+			vis_symbol_colors[s[0]],
+			2
+			)
+
+	cv.imshow("Visualization", clone)
+	cv.waitKey(0)
