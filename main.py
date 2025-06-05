@@ -113,6 +113,28 @@ print("Running symbol detection...")
 scaled_staff = cv.resize(separated_staves[0], (0, 0), fx=scale, fy=scale, interpolation=cv.INTER_NEAREST)
 symbols = obj_detection.find_objs(scaled_staff)
 
+# arrumando pausas meias/inteiras
+
+for i in range(len(symbols)):
+	if symbols[i][0] == 4:
+
+		second_staffline_y = grouped_staff_rows[1][-1]
+		third_staffline_y = grouped_staff_rows[2][0]
+		x = int(symbols[i][1]/scale)
+
+		whole = True
+		half = True
+		for j in range(1, 4):
+			if img_bin[second_staffline_y+j][x] != 0:
+				whole = False
+			if img_bin[third_staffline_y-j][x] != 0:
+				half = False
+
+		if whole and not half:
+			symbols[i].append(0)
+		elif half and not whole:
+			symbols[i].append(1)
+
 for s in symbols:
 	print(s)
 
@@ -123,12 +145,46 @@ if visualize:
 	clone = cv.cvtColor(clone, cv.COLOR_GRAY2BGR)
 
 	for s in symbols:
-		cv.rectangle(clone,
-			(int(s[1]-(symbol_sizes[s[0]][0]/2)), int(s[2]-(symbol_sizes[s[0]][1]/2))), 
-			(int(s[1]+(symbol_sizes[s[0]][0]/2)), int(s[2]+(symbol_sizes[s[0]][1]/2))), 
-			vis_symbol_colors[s[0]],
-			2
-			)
+
+		if s[0] != 4:
+			cv.rectangle(clone,
+				(int(s[1]-(symbol_sizes[s[0]][0]/2)), int(s[2]-(symbol_sizes[s[0]][1]/2))), 
+				(int(s[1]+(symbol_sizes[s[0]][0]/2)), int(s[2]+(symbol_sizes[s[0]][1]/2))), 
+				vis_symbol_colors[s[0]],
+				2
+				)
+
+		if s[0] == 2 or s[0] == 3:
+			if s[0] == 3:
+				i = 0 if s[3] == -1 else 1
+			else:
+				i = 2 + s[3]
+			clone = cv.putText(clone,
+				flags_to_dur[i],
+				(int(s[1]-(symbol_sizes[s[0]][0]/2)), int(s[2]+(symbol_sizes[s[0]][1]/2)+24)),
+				cv.FONT_HERSHEY_SIMPLEX,
+				1,
+				vis_symbol_colors[s[0]],
+				2,
+				cv.FILLED
+				)
+
+		if s[0] == 4 and len(s) == 4:
+			cv.rectangle(clone,
+				(int(s[1]-(symbol_sizes[s[0]][0]/2)), int(s[2]-(symbol_sizes[s[0]][1]/2))), 
+				(int(s[1]+(symbol_sizes[s[0]][0]/2)), int(s[2]+(symbol_sizes[s[0]][1]/2))), 
+				vis_symbol_colors[s[0]],
+				2
+				)
+			clone = cv.putText(clone,
+				("1" if s[3]==0 else "2"),
+				(int(s[1]-(symbol_sizes[s[0]][0]/2)), int(s[2]+(symbol_sizes[s[0]][1]/2)+24)),
+				cv.FONT_HERSHEY_SIMPLEX,
+				1,
+				vis_symbol_colors[s[0]],
+				2,
+				cv.FILLED
+				)
 
 	cv.imshow("Visualization", clone)
 	cv.waitKey(0)

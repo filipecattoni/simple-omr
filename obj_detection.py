@@ -75,6 +75,7 @@ def find_objs(image):
 		print(f"Detecting {symbol_names[i]}...")
 		for box in get_obj_boxes(clf, cropped_img, i):
 			symbols.append([i, crop_x+int((box[0]+box[2])/2), crop_y+int((box[1]+box[3])/2)])
+		return symbols
 
 	return symbols
 
@@ -167,7 +168,7 @@ def find_flags(img, note_box):
 	flag_detecting = False
 	while True:
 
-		if img[y][x_edge] != 0:
+		if img[y][x_edge] != 0 and img[y][x_edge-1] != 0 and img[y][x_edge+1] != 0:
 			break
 
 		if flag_detecting:
@@ -193,24 +194,32 @@ def find_beam_dir(img, x, y):
 	for x_dir in [-1, 1]:
 
 		h_edge = x
+		black_pixel_found = False
 		for i in range(1, x_threshold+1):
 			h_edge = h_edge+x_dir
-			if img[y][h_edge] != 0:
+			if not black_pixel_found:
+				if img[y][h_edge] == 0:
+					black_pixel_found = True
+			elif img[y][h_edge] != 0:
 				h_edge = h_edge-x_dir
 				break
 
 		for y_dir in [-1, 1]:
 
 			y_edge = y
+			black_pixel_found = False
 			for i in range(1, y_threshold+1):
 				y_edge = y_edge+y_dir
-				if img[y_edge][x] != 0:
+				if not black_pixel_found:
+					if img[y_edge][x] == 0:
+						black_pixel_found = True
+				elif img[y_edge][x] != 0:
 					y_edge = y_edge-y_dir
 					break
 
 			found = True
 			for i in range(1, beam_threshold+1):
-				if img[y_edge+(i*y_dir)][h_edge] != 0:
+				if img[y_edge+(i*y_dir)][h_edge] != 0 and img[y_edge+(i*y_dir)][h_edge-1] != 0 and img[y_edge+(i*y_dir)][h_edge+1] != 0:
 					found = False
 					break
 

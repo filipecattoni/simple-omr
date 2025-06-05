@@ -89,6 +89,15 @@ vis_symbol_colors = [
 	(225,52,235)
 ]
 
+flags_to_dur = [
+	"1",
+	"2",
+	"4",
+	"8",
+	"16",
+	"32"
+]
+
 hog_or = 9
 hog_ppc = [4, 4]
 hog_cpb = [2, 2]
