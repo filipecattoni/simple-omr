@@ -59,7 +59,7 @@ def find_objs(image):
 	cropped_img, crop_x, crop_y = helpers.crop_whitespace(image)
 	symbols = []
 
-	#get_obj_boxes(clf, cropped_img, Symbols.rest_wholehalf.value)
+	#get_obj_boxes(clf, cropped_img, Symbols.clef_treble.value)
 
 	print("Detecting whole/half notes...")
 	for box in get_obj_boxes(clf, cropped_img, Symbols.notehead_empty.value):
@@ -75,7 +75,6 @@ def find_objs(image):
 		print(f"Detecting {symbol_names[i]}...")
 		for box in get_obj_boxes(clf, cropped_img, i):
 			symbols.append([i, crop_x+int((box[0]+box[2])/2), crop_y+int((box[1]+box[3])/2)])
-		return symbols
 
 	return symbols
 
@@ -127,10 +126,11 @@ def get_obj_boxes(clf, img, symbol):
 
 	init_boxes = []
 	window_size = symbol_sizes[symbol]
+	step_size = 8
 
 	# getting all bounding boxes in image
 
-	for (x, y, window) in helpers.sliding_window(img, stepSize=8, windowSize=window_size):
+	for (x, y, window) in helpers.sliding_window(img, stepSize=step_size, windowSize=window_size):
 
 		if (window.shape[1] < window_size[0]) or (window.shape[0] < window_size[1]):
 			continue

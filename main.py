@@ -135,6 +135,7 @@ for i in range(len(symbols)):
 		elif half and not whole:
 			symbols[i].append(1)
 
+print(adjusted_staff_rows)
 for s in symbols:
 	print(s)
 
@@ -146,7 +147,7 @@ if visualize:
 
 	for s in symbols:
 
-		if s[0] != 4:
+		if s[0] != Symbols.rest_wholehalf.value:
 			cv.rectangle(clone,
 				(int(s[1]-(symbol_sizes[s[0]][0]/2)), int(s[2]-(symbol_sizes[s[0]][1]/2))), 
 				(int(s[1]+(symbol_sizes[s[0]][0]/2)), int(s[2]+(symbol_sizes[s[0]][1]/2))), 
@@ -154,8 +155,8 @@ if visualize:
 				2
 				)
 
-		if s[0] == 2 or s[0] == 3:
-			if s[0] == 3:
+		if s[0] == Symbols.notehead_full.value or s[0] == Symbols.notehead_empty.value:
+			if s[0] == Symbols.notehead_empty.value:
 				i = 0 if s[3] == -1 else 1
 			else:
 				i = 2 + s[3]
@@ -169,7 +170,7 @@ if visualize:
 				cv.FILLED
 				)
 
-		if s[0] == 4 and len(s) == 4:
+		if s[0] == Symbols.rest_wholehalf.value and len(s) == 4:
 			cv.rectangle(clone,
 				(int(s[1]-(symbol_sizes[s[0]][0]/2)), int(s[2]-(symbol_sizes[s[0]][1]/2))), 
 				(int(s[1]+(symbol_sizes[s[0]][0]/2)), int(s[2]+(symbol_sizes[s[0]][1]/2))), 
