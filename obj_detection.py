@@ -59,24 +59,55 @@ def find_objs(image):
 	cropped_img, crop_x, crop_y = helpers.crop_whitespace(image)
 	symbols = []
 
-	#get_obj_boxes(clf, cropped_img, Symbols.clef_treble.value)
-
+	#get_obj_boxes(clf, cropped_img, Symbols.rest_wholehalf.value)
+	
 	print("Detecting whole/half notes...")
 	for box in get_obj_boxes(clf, cropped_img, Symbols.notehead_empty.value):
 		flags = find_flags(cropped_img, box)
 		symbols.append([Symbols.notehead_empty.value, crop_x+int((box[0]+box[2])/2), crop_y+int((box[1]+box[3])/2), flags])
-
+	
 	print("Detecting other notes...")
 	for box in get_obj_boxes(clf, cropped_img, Symbols.notehead_full.value):
 		flags = find_flags(cropped_img, box)
 		symbols.append([Symbols.notehead_full.value, crop_x+int((box[0]+box[2])/2), crop_y+int((box[1]+box[3])/2), flags])
-
+	
 	for i in range(Symbols.rest_wholehalf.value, len(Symbols)):
 		print(f"Detecting {symbol_names[i]}...")
 		for box in get_obj_boxes(clf, cropped_img, i):
 			symbols.append([i, crop_x+int((box[0]+box[2])/2), crop_y+int((box[1]+box[3])/2)])
 
 	return symbols
+
+def get_obj_boxes(clf, img, symbol):
+
+	init_boxes = []
+	window_size = symbol_sizes[symbol]
+	if window_size[1] > img.shape[0]:
+		window_size[1] = img.shape[0]
+	step_size = 8
+
+	# getting all bounding boxes in image
+
+	for (x, y, window) in helpers.sliding_window(img, stepSize=step_size, windowSize=window_size):
+
+		if (window.shape[1] < window_size[0]) or (window.shape[0] < window_size[1]):
+			continue
+		
+		#cv.imwrite("data_temp/a1_{}_{}.png".format(x, y), window)
+		#continue
+
+		resized = cv.resize(window, (32, 32))
+		im_hog = hog(resized,
+				orientations=hog_or,
+				pixels_per_cell=hog_ppc,
+				cells_per_block=hog_cpb)
+		im_predict = clf.predict([im_hog])
+		if im_predict == symbol:
+			init_boxes.append([x, y])
+
+	#sys.exit(0)
+
+	return combine_overlaps(init_boxes, window_size)
 
 def combine_overlaps(boxes, window_size):
 
@@ -122,41 +153,12 @@ def combine_overlaps(boxes, window_size):
 
 	return combined_boxes
 
-def get_obj_boxes(clf, img, symbol):
-
-	init_boxes = []
-	window_size = symbol_sizes[symbol]
-	step_size = 8
-
-	# getting all bounding boxes in image
-
-	for (x, y, window) in helpers.sliding_window(img, stepSize=step_size, windowSize=window_size):
-
-		if (window.shape[1] < window_size[0]) or (window.shape[0] < window_size[1]):
-			continue
-		
-		#cv.imwrite("data_temp/a1_{}_{}.png".format(x, y), window)
-		#continue
-
-		resized = cv.resize(window, (32, 32))
-		im_hog = hog(resized,
-				orientations=hog_or,
-				pixels_per_cell=hog_ppc,
-				cells_per_block=hog_cpb)
-		im_predict = clf.predict([im_hog])
-		if im_predict == symbol:
-			init_boxes.append([x, y])
-
-	#sys.exit(0)
-
-	return combine_overlaps(init_boxes, window_size)
-
 def find_flags(img, note_box):
 
 	center_x = int((note_box[0] + note_box[2]) / 2)
 	center_y = int((note_box[1] + note_box[3]) / 2)
 
-	x_edge, y_dir = find_beam_dir(img, center_x, center_y)
+	x_edge, x_dir, y_dir = find_stem_dir(img, center_x, center_y)
 
 	if y_dir == 0:
 		return -1
@@ -166,18 +168,25 @@ def find_flags(img, note_box):
 
 	flags_found = 0
 	flag_detecting = False
-	while True:
+	flag_detecting_n = 0
 
-		if img[y][x_edge] != 0 and img[y][x_edge-1] != 0 and img[y][x_edge+1] != 0:
-			break
+	while True:
 
 		if flag_detecting:
 			if not (img[y][x_left] == 0 or img[y][x_right] == 0):
+				if flag_detecting_n > 5:
+					flags_found = flags_found+1
 				flag_detecting = False
+				flag_detecting_n = 0
+			else:
+				flag_detecting_n = flag_detecting_n+1
 		else:
 			if img[y][x_left] == 0 or img[y][x_right] == 0:
-				flags_found = flags_found+1
 				flag_detecting = True
+				flag_detecting_n = 1
+
+		if img[y][x_edge] != 0 and img[y][x_edge-1] != 0 and img[y][x_edge+1] != 0:
+			break
 
 		y = y+y_dir
 		if y<0 or y>len(img):
@@ -185,46 +194,49 @@ def find_flags(img, note_box):
 
 	return flags_found
 
-def find_beam_dir(img, x, y):
+def find_stem_dir(img, x, y):
 
 	x_threshold = 25
 	y_threshold = 20
 	beam_threshold = 15
 
-	for x_dir in [-1, 1]:
+	for y_dir in [-1, 1]:
 
-		h_edge = x
+		y_edge = y
+		x_temp = x
 		black_pixel_found = False
-		for i in range(1, x_threshold+1):
-			h_edge = h_edge+x_dir
+
+		for i in range(1, y_threshold+1):
+			y_edge = y_edge+y_dir
 			if not black_pixel_found:
-				if img[y][h_edge] == 0:
+				if img[y_edge][x_temp] == 0:
 					black_pixel_found = True
-			elif img[y][h_edge] != 0:
-				h_edge = h_edge-x_dir
-				break
-
-		for y_dir in [-1, 1]:
-
-			y_edge = y
-			black_pixel_found = False
-			for i in range(1, y_threshold+1):
-				y_edge = y_edge+y_dir
-				if not black_pixel_found:
-					if img[y_edge][x] == 0:
-						black_pixel_found = True
-				elif img[y_edge][x] != 0:
-					y_edge = y_edge-y_dir
+			elif img[y_edge][x] != 0:
+				if img[y_edge][x_temp-1] == 0:
+					x_temp = x_temp=1
+				elif img[y_edge][x_temp+1] == 0:
+					x_temp = x_temp+1
+				else:
 					break
 
-			found = True
-			for i in range(1, beam_threshold+1):
-				if img[y_edge+(i*y_dir)][h_edge] != 0 and img[y_edge+(i*y_dir)][h_edge-1] != 0 and img[y_edge+(i*y_dir)][h_edge+1] != 0:
-					found = False
-					break
+		for x_dir in [-1, 1]:
 
-			if found:
-				return h_edge, y_dir
+			x_edge = x
+			stem_found = False
+			stem_pixels = 0
+			for i in range(1, x_threshold+1):
+				x_edge = x_edge+x_dir
+				if img[y_edge][x_edge] == 0:
+					if not stem_found:
+						stem_found = True
+						stem_pixels = 1
+					else:
+						stem_pixels = stem_pixels+1
+				elif stem_found:
+					if stem_pixels >= 5:
+						stem_found = False
+					else:
+						return x_edge-(x_dir*2), x_dir, y_dir
 
 	return 0, 0
 

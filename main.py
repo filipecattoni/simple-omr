@@ -8,6 +8,7 @@ from config import *
 import helpers
 import segmentation
 import obj_detection
+import notation_construction
 
 def check_img(img):
 	imgS = cv.resize(img, (int(len(img[0])/2), int(len(img)/2)))
@@ -92,6 +93,7 @@ print(f"{len(adjusted_staff_rows)} staff/staves detected. Staffline height: {sta
 # setting scale value
 
 scale = 20.625 / staffspace_height
+print(scale)
 
 # remoção de pautas:
 
@@ -135,9 +137,13 @@ for i in range(len(symbols)):
 		elif half and not whole:
 			symbols[i].append(1)
 
-print(adjusted_staff_rows)
+print(scale)
+print(adjusted_staff_rows[0])
 for s in symbols:
 	print(s)
+
+print("Outputting to output.musicxml...")
+notation_construction.output_xml(symbols, adjusted_staff_rows[0], staffspace_height, staffline_height, scale, 3, 4)
 
 if visualize:
 
